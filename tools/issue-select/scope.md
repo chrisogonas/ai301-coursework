@@ -36,4 +36,4 @@ you want to avoid. The skill uses this only to RANK the issues your
 rubric accepts, never to change a verdict: fit cannot rescue an issue
 your rubric rejects, and cannot sink one it accepts. -->
 
-(Write a few sentences here.)
+AI/Machine Learning Engineer, Software engineer (development & testing), Python, FastAPI, C#.NET; Database Systems, Data Integration, Process Automation, Graphs, OpenMP
