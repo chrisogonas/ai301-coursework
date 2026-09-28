@@ -1,0 +1,28 @@
+# Rubric: is this reproduction package ready to post?
+
+## Checks
+
+| Check | Evidence | Pass condition | Weight |
+|---|---|---|---|
+| env-recorded | The repro report's environment record (eval: the environment line or section inside the bundle's repro report; live: the draft repro file). | The report names the software version under test and the platform it ran on (OS or equivalent runtime), plus the install method when the repo's template asks for it — specific enough that someone else could set up the same run. Missing the version or missing the platform is a fail. | required |
+| env-faithful | The environment record read against the issue's stated target (the version/OS fields in the issue context; live: the issue body). | The recorded environment matches what the issue targets, or every deviation from the issue's stated target — older version, different OS, different install method — is explicitly named in the report. Testing a newer release than the issue's filed version passes when the report says so; this check compares against the issue's target only and never requires testing or naming the repo's latest release. A silent deviation, especially testing an older version than the issue targets, is a fail. | required |
+| steps-rerunnable | The report's preparation and steps, including every input file, config, and command it uses (eval: the repro report section of the bundle; live: the draft). | A stranger with the recorded environment could re-run the attempt from the stated starting point to the trigger: exact commands, and every input or config shown, quoted, or pinned to an exact public source (e.g. "the issue's snippet verbatim", "the script from the issue with rangeStart 19"). Immaterial filler (e.g. the valid part of a config whose invalid section — quoted — is the trigger) may be described rather than quoted when any reasonable choice would still hit the trigger. Fail when a step depends on a private or unavailable resource, or papers over real work with prose ("set up the project"). | required |
+| behavior-matches-issue | The report's artifacts (output excerpts, logs, screenshots) read against the behavior the issue body describes. | The artifacts show the issue's specific behavior — the same failure with the same signature (same error text or class, panic vs graceful error, matching exit mode) — or, for a cannot-reproduce, they show a faithful attempt at the issue's exact trigger and what happened instead. Artifacts that show an adjacent failure (a different error class, the wrong syntax or flag exercised, or merely that the program runs) fail, no matter how polished the report is. Absent artifacts fail. | required |
+| outcome-honest | The report's stated conclusion (its Actual/Analysis/summary lines) next to what its artifacts actually show. | The headline outcome (reproduced / confirmed / cannot reproduce) claims exactly what the shown artifacts support: "reproduced" only over a matching artifact; an honest cannot-reproduce that names what differed and what a triggering setup might need passes. Supplementary observations from the same session (e.g. a control variant's one-line result) may be stated without pasted output, as long as they are reported as observations and are not the deciding proof. Fail when the headline conclusion has no artifact behind it ("I verified", "guaranteed reproducible", a root cause from vibes) or is broader than the run performed (extra platforms, builds, or versions not shown). | required |
+| claim-specific-honest | The candidate claim comment read against the issue context. | The claim names this issue's specifics (the observed behavior, the version tested, or a concrete finding from the attempt) and states honest, concrete intent or a next step. An interchangeable comment that could be pasted on any issue, an assign-me/reserve-this demand, a delivery guarantee, or a bare +1 is a fail. | required |
+| policy-followed | The repo-facts block's contribution policy and bug-report template asks (live: the repo's CONTRIBUTING.md, AI policy files, and issue templates) read against both comments. | The comments comply with what the repo's stated policy literally demands of comment text. Treat course packages and drafts as AI-assisted work. If the policy requires disclosing AI use, a disclosure statement must actually appear in the comment. If the policy instead requires comments to be human-written in the contributor's own words, a comment written in the student's own voice satisfies it — no disclosure is owed unless the policy asks for one. Permissive or responsibility-only policies, or no stated policy, pass. | required |
+| control-run | The report's artifacts: a contrasting run (a working input, a prior version, or an expected-path variant) next to the failing one. | The report includes a control that isolates the trigger — a nearby variant behaving correctly — either shown or reported as a one-line observation. A good signal of a careful attempt; never decides the verdict. | preferred |
+
+## Verdict rule
+
+Accept if and only if every required check that was graded passes.
+Preferred checks never change the verdict. `unclear` counts as fail:
+proof that cannot be verified is proof that is not ready to post.
+
+In a claim-only live draft, checks whose evidence lives in the repro
+report (env-recorded, env-faithful, steps-rerunnable,
+behavior-matches-issue, outcome-honest, control-run) are reported as
+`unclear` with evidence `not yet applicable: claim-only draft` and are
+left out of the verdict, per SKILL.md. The verdict then reads only
+claim-specific-honest and policy-followed: is this claim comment ready
+to post?

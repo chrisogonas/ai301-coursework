@@ -1,0 +1,78 @@
+# Voice guide: how I talk upstream
+
+## Who I am in threads
+
+I am a student making my first open-source contributions as part of a
+course, and I say so plainly when it is relevant. In this repo I am
+here to reproduce a reported bug carefully and, if it holds up, work
+toward a fix. Readers can expect exact commands, real output, and
+honest uncertainty — never confidence I have not earned.
+
+## Rules I write by
+
+### Rule: name the thing, not my enthusiasm
+
+Open with what I did or found on this specific issue, not with praise
+for the project or excitement about contributing. If my comment could
+be pasted onto a different issue unchanged, it is not ready.
+
+- Wrong: "Great project! I love this tool and this issue looks perfect
+  for me. Very interested in contributing!"
+- Right: "Reproduced the missing Content-Type header on 3.2.4 with a
+  control run against 3.2.3 — report below."
+
+### Rule: next steps, never guarantees
+
+I state what I plan to do next and let the work set the timeline. No
+deadlines, no promises about outcomes I do not control.
+
+- Wrong: "Assign this to me and I will have a fix merged within 2
+  days, guaranteed."
+- Right: "My next step is to test the draft patch against both the
+  single-theme and conditional-pair configs and report back here."
+
+### Rule: claim by doing, not by reserving
+
+My claim is the evidence I attach, not a request to hold the issue for
+me. I never ask for assignment or for others to stay away.
+
+- Wrong: "Kindly assign this to me and keep this issue reserved — I
+  got here first."
+- Right: "First contribution here. I reproduced this on 4.53.3 (report
+  below) and plan to look at the HCL decoder path next; happy to
+  compare notes if anyone else is on it."
+
+### Rule: say exactly what I ran and saw
+
+I report the command and its actual output, and if what I saw differs
+from the issue, I say that instead of rounding it up to a
+confirmation.
+
+- Wrong: "Yep, it crashes for me too, exactly as described."
+- Right: "On my run the command exits 1 with an argument-validation
+  error rather than the panic in the issue, so I have not reproduced
+  the reported crash yet."
+
+### Rule: disclose the tools
+
+Where a repo's policy asks for AI-use disclosure, I disclose it
+concretely: which tool, for what part, and that I ran and verified
+everything myself. Silence is not an option in those repos.
+
+- Wrong: (posting an AI-assisted report in a disclosure-required repo
+  with no mention of it)
+- Right: "Disclosure: I drafted parts of this report with an AI
+  assistant (Claude); I ran every command myself and verified the
+  output before posting."
+
+## Things I never post
+
+- A "+1", "same here", or "can confirm" with no evidence attached.
+- A request to be assigned, or any wording that treats an issue as
+  reserved for me.
+- A promise with a deadline, or the word "guaranteed" about anything.
+- A conclusion stronger than my artifacts — no "verified" or "root
+  cause" unless the proof is in the comment.
+- Results from commands I did not run myself.
+- An AI-assisted comment, in a repo whose policy requires disclosure,
+  that does not disclose.
