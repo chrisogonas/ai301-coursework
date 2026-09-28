@@ -25,9 +25,9 @@ chrisogonas
 
 https://github.com/codepath/pathreview-ai301-fa26-s1/issues/72#issuecomment-5861363943
 
-Hi — I'd like to work on this one: `verify_password` in `core/security.py` lets passlib's `UnknownHashError` escape when the stored hash isn't a recognizable format, instead of failing closed with `False`. I'm a student working through Path Review as a course assignment, and this would be my first contribution here.
+Hi, I'd like to work on this one: `verify_password` in `core/security.py` lets passlib's `UnknownHashError` escape when the stored hash isn't a recognizable format, instead of failing closed with `False`. I'm a student working through Path Review as a course assignment, and this would be my first contribution here.
 
-My next step is to reproduce it in a clean environment: call `verify_password` with a plausible password against a malformed stored hash and confirm the exception escapes rather than `False` coming back, then run the `xfail`-marked test in `tests/unit/test_security.py` (manifest H-05) to see the same failure through the suite. I'll post a repro report here — environment, exact steps, and output — before touching the fix. I can see several classmates are already on this; per the course rules I'll reproduce and report independently rather than build on their comments.
+My next step is to reproduce it in a clean environment: call `verify_password` with a plausible password against a malformed stored hash and confirm the exception escapes rather than `False` coming back, then run the `xfail`-marked test in `tests/unit/test_security.py` (manifest H-05) to see the same failure through the suite. I'll post a repro report here - environment, exact steps, and output - before touching the fix. I can see several classmates are already on this; per the course rules I'll reproduce and report independently rather than build on their comments.
 
 **Reproduction comment**
 
