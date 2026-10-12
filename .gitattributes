@@ -2,3 +2,5 @@ tools/repro-check/** -text
 beat-1-sandbox/unit-2/eval-run.txt -text
 tools/plan-check/** -text
 beat-1-sandbox/unit-3/eval-run.txt -text
+tools/pr-precheck/** -text
+beat-1-sandbox/unit-4/eval-run.txt -text

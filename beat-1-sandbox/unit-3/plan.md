@@ -227,3 +227,16 @@ check` passed, `black --check` left all files unchanged, `mypy` reported
 no issues, and `pytest tests/unit` gave 377 passed and 52 xfailed (other
 seeded bugs), with no XPASS. My posted plan comment is still accurate, so
 no follow-up comment is needed.
+
+Pre-PR re-run (2026-10-11, same commit `aa020a4`, details in
+`test_evidence.md`): I re-ran the checks through the Makefile targets
+themselves, using MSYS2's `mingw32-make` in place of GNU make, with
+the same results as above. `make test-integration` reports "no tests
+ran", since the repo has no integration tests yet. I also ran
+CONTRIBUTING's frontend check (`cd frontend && npm ci && npm test --
+--run`). One test, `ProfileForm > validates portfolio URL character
+limit`, times out at vitest's 5 s default on my machine. It fails the
+same way twice, and the suite passes 18/18 with `--testTimeout=30000`.
+This branch changes no frontend file, so I left the test alone and
+disclosed the timeout in the PR. The code change is still exactly what
+this plan describes.
