@@ -55,10 +55,9 @@ happened; these entries are the toolkit's own timeline.
 All four entries are graded. Keep every heading below, and fill each
 one in the week it belongs to.
 
-**Unit 5: [one line on the tool work]**
+**Unit 5: Turned my issue-select skill into issue-scout, with a written search strategy, and patched two rubric checks after the first real scan**
 
-[2-4 sentences: what you built (the scout, your strategy), what broke
-or fell short, what changed because of it.]
+I installed the scout over my Unit 1 skill and wrote a search strategy: four `gh search issues` queries (good first issues in Python, TypeScript, JavaScript and C#), plus ranking rules that drop assigned, stale, crowded and sandbox issues and put bugs first. The first version fell short twice before any money was spent. Plain label searches returned mostly one-person repos, and sorting by interactions fixed that but returned only crowded threads, so a hand dry run kept just 5 of 400 results; adding a `--comments "<=8"` cap raised that to 71. The real scan accepted an issue a collaborator had already said was fixed, and passed another on its `good first issue` label alone although a maintainer had asked for a design, so I patched `unclaimed` to fail fixed issues and `newcomer-scope` to discount the label when a design request is still open, and logged each change in scan-notes.md.
 
 **Unit 6: [one line on the tool work]**
 
