@@ -11,7 +11,7 @@ files and no evidence uploads are part of Assignment 5.
 **Student:** Chrisogonas Odhiambo
 **GitHub Username:** chrisogonas
 **Issue:** https://github.com/open-telemetry/opentelemetry-dotnet/issues/2753
-**Pull Request:** [GitHub PR link, once opened]
+**Pull Request:** https://github.com/open-telemetry/opentelemetry-dotnet/pull/8096
 
 One repository, built across units 5 to 8, telling the whole story of your real
 contribution. Fill it as you work, not at the end — the sections below ask for evidence that
@@ -62,10 +62,9 @@ I installed the scout over my Unit 1 skill and wrote a search strategy: four `gh
 
 I folded my three voice-guide copies into one guide at `~/.claude/voice-guard/`, added Upstream rules for claims, questions and pings, and installed the guard as a Claude Code hook, but on my Windows machine it broke three ways: `python3` resolved to Python 3.8, which crashes the checker; symlinks are not permitted, so the skills now point to the guide with one-line pointer files; and the hook only watched the Bash tool, so I extended it to the PowerShell tool and tested that both stop a body-less `gh issue comment`. The guard then passed my claim twice (manual check and hook), and the posting attempt that the headless session's permissions blocked showed me the same Bash/PowerShell split from the other side. For the repo-memory file, I ran one scoped orientation over `src/OpenTelemetry/Trace` and distilled it into a 66-line `CLAUDE.local.md` that imports the repo's `AGENTS.md`; the first test command I wrote targeted `net9.0`, which the test projects do not build for, so I fixed it to `net11.0` only after running it, and I added the `AGENTS.md` rule that I must post issue replies myself.
 
-**Unit 7: [one line on the tool work]**
+**Unit 7: Installed the ship-gate with a four-check manifest, patched it for PowerShell on Windows, and opened my PR through it**
 
-[2-4 sentences: the ship-gate and your gate manifest. What it produced
-on your real branch, what fought you, what changed because of it.]
+My manifest runs the Release build, `OpenTelemetry.Tests` on net11.0, `dotnet format whitespace` and markdownlint, each tested first in `cmd` (the shell the gate uses on Windows) on unchanged `main`. The sanity check went into the excluded table, because it fails on `main` with 1,493 CRLF errors from my `core.autocrlf=true` checkout, and markdownlint got `--ignore-path .git/info/exclude` so my local working files don't fail it. Three things fought me: the hook only watched the Bash tool, so the step 4 test ran `gh` through PowerShell and skipped the gate until I widened the matcher and the script's tool check; the gate crashed printing its summary on a cp1252 console (fixed with `PYTHONIOENCODING=utf-8`); and pr-precheck rejected my branch once with "issue thread absent", because the gate only finds issues from `Fixes #N` and my PR deliberately doesn't close a `keep-open` issue, so I put the issue URL in `plan.md`. After that it passed all four repo checks and all nine pr-precheck checks by hand and again through the hook when I opened #8096, and its advice made me add a line offering to switch to a code change.
 
 **Unit 8: [one line on the tool work]**
 
@@ -554,27 +553,65 @@ Option 1 with the feature off (`Unset`), and fixed the note in commit
 
 ## Pull Request
 
-**PR Link:** [GitHub PR URL when opened]
+**PR Link:** https://github.com/open-telemetry/opentelemetry-dotnet/pull/8096
+(opened 2026-11-07, `chrisogonas:docs/2753-async-error-status-note` into
+`main`, commits f7d6e0487 and 3679b012e, +44 lines in one docs file)
 
-**PR Description:** [what the PR says; much of the content above
-adapts into it]
+**PR Description:** Title: "[docs] Note that SetErrorStatusOnException can
+flag caught async exceptions". The description follows the repo's PR
+template and covers:
+
+- **Changes:** a "Caught exceptions in async code" subsection under Option 2
+  in `docs/trace/reporting-exceptions/README.md`; no code, API, test or
+  CHANGELOG changes.
+- **Why:** the stack trace showing the caller's continuation running inside
+  the faulted method's generated catch, and why `ExceptionProcessor.OnEnd`
+  cannot tell that apart from an exception leaving the `using` block. It
+  also mentions the `AsyncLocal` idea that failed, and that I tested on x64
+  Windows only.
+- **Before and after:** my repro (async `Error`, sync no status), then the
+  note's own sample and each workaround run in fresh processes
+  (`note-example Error`, `yield Unset`, `ok-in-catch Error`,
+  `ok-both-in-catch Error`, `option1 Unset`).
+- **Checks:** markdownlint, Release build, 2006 tests (2001 passed, 5
+  skipped, 0 failed), the format check, and why the sanity check was replaced
+  with `git diff --check` and a byte scan.
+- **The issue link:** the template's "Fixes #" line is answered "N/A" with a
+  reason, and the PR links #2753 as the design discussion issue. I used a
+  reference instead of `Fixes #2753` on purpose: the issue carries the
+  `keep-open` label and this PR documents the bug without fixing the code, so
+  `Fixes` would wrongly close it on merge.
+- **Open question:** it says I asked whether maintainers prefer a code change
+  and haven't heard back, and that I will switch if they do.
+- **AI use:** "AI-assisted" is ticked. I used Claude Code to write the probe
+  programs, draft the note and help write the description; I ran every probe,
+  checked the output, and edited the text.
 
 **Maintainer Feedback:**
 
-- [Date]: [feedback received, or "none yet"; silence is a normal
-  state and costs you nothing]
-- [Date]: [how you addressed it]
+- 2026-11-07: none yet. The welcome bot and the labeler ran; EasyCLA
+  reported "Missing CLA Authorization", so signing the CLA is my next step.
 
-**Status:** [Awaiting review / Iterating / Merged / Closed. The
-status is a fact you record, never a grade: the PR is graded as
-opened.]
+**Status:** Awaiting review
 
 **Toolkit**
 
-- Tool:
-- What it produced:
-- Difficulties:
-- What changed:
+- Tool: the ship-gate (my four-check manifest plus pr-precheck in live mode),
+  run by hand three times and then by the hook when Claude Code ran
+  `gh pr create`, with my voice guard checking the description.
+- What it produced: run 1 PASS (4 repo checks, 9 pr-precheck checks), then a
+  crash printing the summary; run 2, after my second commit, **reject** on
+  `policy-honored` ("the issue thread is absent"); run 3 PASS; the hook's
+  fresh run when I opened #8096, PASS. pr-precheck also suggested a line
+  saying I'd switch to a code change, which I added.
+- Difficulties: the hook watched only Bash, so a PowerShell `gh pr create`
+  skipped it; the cp1252 console crash; and the gate finds the issue only
+  from `Fixes/Closes/Resolves #N`, which my PR leaves out on purpose.
+- What changed: I widened the hook to `Bash|PowerShell` in `settings.json`
+  and `check_gate.py`, set `PYTHONIOENCODING=utf-8`, and put the issue URL in
+  `plan.md`'s title line so the gate could fetch the thread. A fix I would
+  make upstream: have the gate also read "Refs #N" or the template's issue
+  line.
 
 ---
 
