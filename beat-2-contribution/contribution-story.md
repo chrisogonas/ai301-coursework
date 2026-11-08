@@ -398,7 +398,7 @@ so the workaround is to turn the feature off. The plan also said two people
 in the thread tried `Ok`; only BenHewins did, with both calls, and said it
 worked. I ran both calls in fresh processes (still `Error`) and Option 1 with
 the feature off (`Unset`), added both rows above, and fixed the note in a
-second commit (3679b012e).
+second commit (c626d3de6).
 
 Risk: maintainers may not want docs to close the issue (it carries the
 `keep-open` label), so the PR will reference #2753 and leave closing it to
@@ -517,7 +517,7 @@ note saying `Ok` does not help, since two people in the thread tried it.
 **2026-11-06: built and checked**
 
 Branch `docs/2753-async-error-status-note` from upstream `main` 025ead795,
-one commit (f7d6e0487), +41 lines in `docs/trace/reporting-exceptions/README.md`.
+one commit (9be9acaa7), +41 lines in `docs/trace/reporting-exceptions/README.md`.
 I compiled the note's sample verbatim and ran every claim three times, ran
 the manifest checks, and the ship-gate passed by hand (four repo checks and
 nine pr-precheck checks). I kept the regression test on my repro branch: with
@@ -532,7 +532,17 @@ and it cannot work while the provider-wide feature is on. I had also written
 that two people tried `Ok`, but only BenHewins did, with both `Status.Ok` and
 `ActivityStatusCode.Ok`. I ran both in fresh processes (still `Error`) and
 Option 1 with the feature off (`Unset`), and fixed the note in commit
-3679b012e (+44 lines in total now).
+c626d3de6 (+44 lines in total now).
+
+**2026-11-07: EasyCLA failed after I signed**
+
+I signed the CLA, but the check stayed red. The bot's comment showed my own
+login with a check mark; what failed was the `Co-Authored-By: Claude ...`
+trailer in both commit messages, because EasyCLA treats every co-author as a
+signer and that address has no GitHub account. I removed the trailer from
+both commits (same file content, new hashes 9be9acaa7 and c626d3de6),
+force-pushed the branch and asked the bot to re-check with `/easycla`. The
+PR description still discloses the AI use.
 
 **Toolkit**
 
@@ -555,7 +565,7 @@ Option 1 with the feature off (`Unset`), and fixed the note in commit
 
 **PR Link:** https://github.com/open-telemetry/opentelemetry-dotnet/pull/8096
 (opened 2026-11-07, `chrisogonas:docs/2753-async-error-status-note` into
-`main`, commits f7d6e0487 and 3679b012e, +44 lines in one docs file)
+`main`, commits 9be9acaa7 and c626d3de6, +44 lines in one docs file)
 
 **PR Description:** Title: "[docs] Note that SetErrorStatusOnException can
 flag caught async exceptions". The description follows the repo's PR
