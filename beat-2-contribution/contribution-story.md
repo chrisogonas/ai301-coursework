@@ -66,10 +66,9 @@ I folded my three voice-guide copies into one guide at `~/.claude/voice-guard/`,
 
 My manifest runs the Release build, `OpenTelemetry.Tests` on net11.0, `dotnet format whitespace` and markdownlint, each tested first in `cmd` (the shell the gate uses on Windows) on unchanged `main`. The sanity check went into the excluded table, because it fails on `main` with 1,493 CRLF errors from my `core.autocrlf=true` checkout, and markdownlint got `--ignore-path .git/info/exclude` so my local working files don't fail it. Three things fought me: the hook only watched the Bash tool, so the step 4 test ran `gh` through PowerShell and skipped the gate until I widened the matcher and the script's tool check; the gate crashed printing its summary on a cp1252 console (fixed with `PYTHONIOENCODING=utf-8`); and pr-precheck rejected my branch once with "issue thread absent", because the gate only finds issues from `Fixes #N` and my PR deliberately doesn't close a `keep-open` issue, so I put the issue URL in `plan.md`. After that it passed all four repo checks and all nine pr-precheck checks by hand and again through the hook when I opened #8096, and its advice made me add a line offering to switch to a code change.
 
-**Unit 8: [one line on the tool work]**
+**Unit 8: Installed the PR monitor, wrote a playbook from my repo's real review times, and rewrote one rule after the first draft**
 
-[2-4 sentences: the PR-monitor and your playbook. What it read, what it
-drafted, what you did with the draft.]
+I wrote the playbook from what opentelemetry-dotnet actually does: five recent merged PRs from outside contributors (#8059, #7954, #7881, #7855, #7929) got a first maintainer response in 22 minutes to 18 hours, but my voice guide never nudges in under a week, so my first-review threshold is 7 days, and the next step after a nudge is the Slack channel and SIG meeting that CONTRIBUTING.md names for stuck PRs. On #8096, which had only bot comments, the monitor drafted a wait note ("the 7 days run to 2026-11-15 00:21 UTC") rather than a nudge, so I posted nothing. The draft fell short twice: it said nobody had commented on #2753 (eight users have, but no maintainer, and the monitor reads only the PR thread), and it reminded me of a 2026-11-13 check-in I had already posted. The first miss showed that my tag rule ("a person who has commented on #2753") would let a nudge tag users like BenHewins, so I rewrote it to "a maintainer or approver" and re-ran the monitor, which then gave the same wait note with the tag line correct.
 
 ---
 
@@ -544,6 +543,19 @@ both commits (same file content, new hashes 9be9acaa7 and c626d3de6),
 force-pushed the branch and asked the bot to re-check with `/easycla`. The
 PR description still discloses the AI use.
 
+**2026-11-07 (evening): the PR monitor and the wait**
+
+Installed the PR monitor and checked it with `--state` on my PR branch.
+It found #8096 on the first try, because I had already run
+`gh repo set-default` in unit 7. Before writing the playbook, I measured the
+repo: the five most recent merged PRs from outside contributors got a first
+maintainer response within 18 hours, and four of them merged within a day.
+I still set 7 days, the floor in my voice guide. The full run drafted a
+wait note, not a nudge, so I posted nothing. I tightened my tag rule from
+"anyone who commented on #2753" to "a maintainer or approver", because the
+draft showed that the issue's commenters are all users. The next date I
+act on is 2026-11-15, if no maintainer has responded by then.
+
 **Toolkit**
 
 - Tool: Claude Code on a branch in my fork clone, guided by `plan.md`; my
@@ -599,8 +611,10 @@ template and covers:
 
 **Maintainer Feedback:**
 
-- 2026-11-07: none yet. The welcome bot and the labeler ran; EasyCLA
-  reported "Missing CLA Authorization", so signing the CLA is my next step.
+- 2026-11-07: none yet. Only bots have posted (the welcome bot, the
+  labeler, the PR dashboard's "Waiting on reviewers", and EasyCLA, which
+  passed after I removed the co-author trailers and commented `/easycla`).
+  No maintainer has reviewed #8096 or commented on #2753.
 
 **Status:** Awaiting review
 
@@ -629,25 +643,75 @@ template and covers:
 
 **Technical Skills Gained**
 
-[What you learned technically, named concretely.]
+- How C# `async` methods fail: the compiler-generated `MoveNext` catches the
+  exception and calls `AsyncTaskMethodBuilder.SetException` inside that
+  catch, and the awaiting caller often resumes inline, so the caller's code
+  runs while the exception is still being handled on that thread.
+- How the OpenTelemetry .NET SDK builds its processor chain, and how
+  `ExceptionProcessor` uses `Marshal.GetExceptionPointers()` at `OnStart`
+  and `OnEnd` to decide on `Error`. I also learned that `Activity` lets a
+  later `Error` replace `Ok`.
+- Writing probe programs that print runtime state (pointer values, stack
+  traces) to test an explanation, and running each case in a fresh process
+  when the result depends on process state.
+- Working in a large repo: targeting the right test framework (`net11.0`,
+  not `net9.0`), xUnit analyzer rules in a Release build, markdownlint, and
+  `dotnet format`.
+- Git and GitHub details I had not met before: EasyCLA treats every
+  `Co-Authored-By` trailer as a signer, a branch rewritten with
+  `git push --force-with-lease`, and `Refs` instead of `Fixes` on a
+  `keep-open` issue.
 
 **Challenges Overcome**
 
-[What was hard and how you solved it; point at the real events, the
-Toolkit blocks above are full of them.]
+- My first explanation of the bug ("the pointer is left over on the
+  thread") was wrong. A probe that printed the stack after the catch showed
+  that the caller runs inside the faulted method's catch block. That changed
+  the fix from code to docs before I wrote any code.
+- A single-process probe told me `SetStatus(Ok)` was a working
+  workaround. plan-check doubted it, and fresh-process runs proved it
+  wrong, so I replaced it with `await Task.Yield()`.
+- On Windows, every hook-based tool (voice guard, ship-gate) skipped
+  PowerShell commands, `python3` pointed at Python 3.8, and the ship-gate
+  crashed on a cp1252 console. I widened the hook matchers, used `python`,
+  and set `PYTHONIOENCODING=utf-8`.
+- EasyCLA stayed red after I signed. I read the bot's comment, saw that the
+  `Co-Authored-By` trailer was the problem, rewrote both commits without it,
+  and re-ran the check.
 
 **What I'd Do Differently Next Time**
 
-[Reflection on your process.]
+- Search for open and merged PRs by issue number before I trust any
+  "unclaimed" verdict. Two of my early picks were already fixed, and
+  checking by hand first would have saved two rounds.
+- Run every probe case in a fresh process from the start, and write the
+  output into the plan before calling anything "verified".
+- Check the repo's CLA and AI-use policies before the first commit, so
+  the commit messages are right the first time and I don't have to rewrite
+  pushed history.
+- Measure the repo's real review times when I open the PR, not after, so
+  I know from day one when a nudge would be fair.
 
 ---
 
 ## Resources Used
 
-[What actually helped, not a reading list. List things this story
-already shows you using: the doc you followed to set the environment
-up, the thread that explained the bug, the person who answered you.
-One real entry beats ten plausible ones.]
-
-- [Link to documentation that helped]
-- [Discussion, issue, or post that helped]
+- [Issue #2753](https://github.com/open-telemetry/opentelemetry-dotnet/issues/2753):
+  BenHewins' OutsideBar/InsideBar variant (2023-01-30), which became my
+  repro's `Program.cs`, and his report that setting both `Ok` statuses
+  worked for him, which I tested and the note answers.
+- [Reporting exceptions docs](https://github.com/open-telemetry/opentelemetry-dotnet/blob/main/docs/trace/reporting-exceptions/README.md):
+  Option 1 and Option 2 framed both the bug and where the note belongs.
+- [`ExceptionProcessor.cs`](https://github.com/open-telemetry/opentelemetry-dotnet/blob/main/src/OpenTelemetry/Trace/Processor/ExceptionProcessor.cs)
+  and its tests in `test/OpenTelemetry.Tests/Trace/ExceptionProcessorTests.cs`:
+  the `OnStart`/`OnEnd` pointer check, and the existing note that x86 clears
+  the pointers earlier.
+- [CONTRIBUTING.md](https://github.com/open-telemetry/opentelemetry-dotnet/blob/main/CONTRIBUTING.md):
+  the build and test commands, the CHANGELOG rule, what makes a PR ready to
+  merge, and the stuck-PR path my playbook follows.
+- [OpenTelemetry GenAI policy](https://github.com/open-telemetry/community/blob/main/policies/genai.md):
+  why the PR discloses AI use and why my review replies are my own words.
+- The EasyCLA bot comment on #8096, which showed my login as signed and so
+  pointed me at the co-author trailer as the failing signer.
+- The repo's `AGENTS.md`, imported into my `CLAUDE.local.md`, for the AI
+  disclosure rule on comments.
