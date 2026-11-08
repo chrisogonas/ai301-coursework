@@ -93,26 +93,57 @@ The issue fits most of my profile: C#, an established library that many people u
 
 **Problem Description**
 
-[In your own words, what is broken or missing?]
+With `SetErrorStatusOnException()` turned on, an activity is marked as an
+error even though nothing failed in it. This happens when code inside the
+activity awaits a call that throws, and then catches and handles that
+exception. The span that succeeded is exported with `StatusCode: Error`, so
+error dashboards and alerts count failures that never happened.
 
 **Expected Behavior**
 
-[What should happen?]
+Only an activity that an exception actually leaves should get `Error`. If the
+code inside the outer activity catches the exception, the outer activity
+should end with status `Unset`, the way the same code written without `await`
+does.
 
 **Current Behavior**
 
-[What actually happens?]
+The outer activity ends with `StatusCode: Error`. In my repro, OutsideBar is
+`Error` in the async run and `Unset` in the sync run, and my regression test
+fails with `Expected: Unset, Actual: Error`. It was reported on 1.1.0 and
+`net6.0`; users confirmed it on .NET 10, and I reproduced it on 1.20.1 with
+`net9.0` and on `main` with `net11.0`. The docs for the feature say nothing
+about async code.
 
 **Affected Components**
 
-[Which parts of the codebase are involved?]
+- `src/OpenTelemetry/Trace/Processor/ExceptionProcessor.cs`: `OnStart` saves
+  `Marshal.GetExceptionPointers()`, and `OnEnd` sets `Error` when the value is
+  non-zero and different from the saved one.
+- `SetErrorStatusOnException()` in `TracerProviderBuilderExtensions.cs`, then
+  `TracerProviderBuilderSdk` and `TracerProviderSdk`, which put the processor
+  first in the chain.
+- `docs/trace/reporting-exceptions/README.md`, Option 2, which documents the
+  feature.
+- Underneath, the .NET runtime: `AsyncTaskMethodBuilder.SetException` runs the
+  awaiting code inline, inside the faulted method's catch block (see Analysis).
 
 **Toolkit**
 
-- Tool:
-- What it produced:
-- Difficulties:
-- What changed:
+- Tool: Claude Code with my `CLAUDE.local.md` repo memory from unit 6, which
+  pointed straight at `ExceptionProcessor` and its call chain. I then had it
+  write two small probe programs that print `Marshal.GetExceptionPointers()`
+  and the stack at each step of an async throw and catch.
+- What it produced: a stack trace showing the caller's code running inside
+  the faulted method's compiler-generated catch
+  (`ThrowAsync -> SetException -> RunContinuations -> Main`), and pointer
+  values that showed the exception was still live, not left over.
+- Difficulties: my unit 6 reading ("the pointer stays set on the
+  continuation thread") was close but wrong. The probe showed the pointer
+  after the catch is a different value from the one inside the catch, which
+  a leftover value would not be.
+- What changed: I rewrote the cause in Analysis from the probe output, and
+  that moved my fix from code to docs (see Solution Approach).
 
 ---
 
@@ -214,67 +245,310 @@ The issue fits most of my profile: C#, an established library that many people u
 
 **Analysis**
 
-[Your analysis of the root cause: what is causing the issue, traced
-to the files and functions involved.]
+`SetErrorStatusOnException()` (`TracerProviderBuilderExtensions.cs`) sets a
+flag that makes `TracerProviderSdk` add the internal `ExceptionProcessor`
+first in the processor chain. `ExceptionProcessor.OnStart` saves
+`Marshal.GetExceptionPointers()` on the activity when it is non-zero.
+`OnEnd` calls it again and sets `Status.Error` when the value is non-zero and
+different from the saved one. The idea is that a non-zero value at `OnEnd`
+means an exception is leaving the activity's `using` block.
+
+The cause, confirmed on 2026-11-06 with a probe program and a stack trace for
+the case where the caller resumes inline, on x64 Windows (not checked on
+x86, Linux or macOS):
+when an awaited async method throws, its compiler-generated `MoveNext` catches
+the exception and calls `AsyncTaskMethodBuilder.SetException` **inside that
+catch block**. `SetException` completes the task and often runs the awaiting
+method's continuation synchronously on the same thread. So the caller's own
+`catch`, and the end of its outer `using`, run nested inside the faulted
+method's catch handler:
+
+```text
+at Program.<Main>$(...)                          <- caller, after its catch
+at ...AsyncStateMachineBox`1.MoveNext(...)
+at System.Threading.Tasks.Task.RunContinuations(...)
+at ...AsyncTaskMethodBuilder`1.SetException(...)
+at Program.<<Main>$>g__ThrowAsync|0_0() line 10   <- inside the generated catch
+```
+
+On that thread the original exception is still being handled, so
+`GetExceptionPointers()` is non-zero when the outer activity ends (my probe:
+`0x3DF5EFB300` inside the caller's catch, `0x3DF5EFD900` after it, so the
+value is not a leftover of the exception the caller caught). The outer
+activity saved `0` at `OnStart`, so `OnEnd` marks it `Error`. After
+`await Task.Yield()` the value is `0x0`.
+
+I don't think this can be fixed reliably inside `ExceptionProcessor`. At
+`OnEnd`, a real exception leaving the `using` block gives the same signal
+(non-zero and different from the saved value), and that case has to keep
+working. The processor only sees the newest exception pointer on the thread,
+not whether that exception is passing through the activity's scope. I tried
+one code idea: take a per-thread baseline whenever an async flow resumes,
+using an `AsyncLocal` change handler with `ThreadContextChanged`. A probe
+shows it fails. The handler last fires when `ThrowAsync` resumes *before* it
+throws (pointers `0x0`). The inline resume of `Outer` inside the catch reuses
+a context with the same value, so the handler does not fire, and the baseline
+stays `0x0` while `Outer` ends with `0x4F4227D550`:
+
+```text
+handler: ThreadContextChanged=True  prev=null  cur=outer tid=5 ptrs=0x0
+Outer ends: tid=5 ptrs=0x4F4227D550
+```
+
+Probe of the behaviours the docs note will describe (`OpenTelemetry` 1.20.1,
+`net9.0`, `SetErrorStatusOnException()`, each line a fresh process; repeated
+three times with the same statuses):
+
+```text
+raw: Ok then Error -> Activity.Status=Error
+baseline  ptrs-before-end=0xA320B7D950   Activity.Status=Error  GetStatus()=Error  otel.status_code=ERROR
+ok        ptrs-before-end=0x1D09BFD4A0   Activity.Status=Error  GetStatus()=Error  otel.status_code=ERROR
+yield     ptrs-before-end=0x0            Activity.Status=Unset  GetStatus()=Unset  otel.status_code=-
+uncaught  ptrs-before-end=0x0            Activity.Status=Error  GetStatus()=Error  otel.status_code=ERROR
+```
+
+`baseline` is the bug. `ok` sets `ActivityStatusCode.Ok` after the catch, and
+it does **not** help: `Activity` lets a later `Error` replace `Ok` (`raw`),
+and the processor sets `Error` at the end. `yield` adds `await Task.Yield()`
+after the catch, and the outer activity stays `Unset`. `uncaught` lets an
+async exception leave the `using` block, and the outer activity is still
+`Error`, so the feature keeps working for real failures (its pointer column
+is `0x0` only because that line is never reached).
+
+The note's own code sample, compiled as written, plus each workaround it
+names (fresh process per line; three rounds, same result each time):
+
+```text
+note-example     Foo status: Error
+yield            Foo status: Unset
+ok-in-catch      Foo status: Error
+ok-both-in-catch Foo status: Error
+option1          Foo status: Unset
+```
+
+`ok-both-in-catch` is the workaround BenHewins reported in the thread: both
+`SetStatus(Status.Ok)` and `SetStatus(ActivityStatusCode.Ok)`. It still ends
+`Error`, because `ExceptionProcessor.OnEnd` calls `SetStatus(Status.Error)`
+whatever the status is. `option1` is Option 1 with
+`SetErrorStatusOnException` turned **off**. The feature applies to the whole
+`TracerProvider`, so Option 1 on one code path cannot help while it is on.
 
 **Proposed Solution**
 
-[High-level description of your fix approach, and what you are
-deliberately NOT changing.]
+Document the limitation where users meet the feature. Under Option 2 in
+`docs/trace/reporting-exceptions/README.md`, I will add a short subsection
+that:
+
+- shows the pattern that triggers it (a caught exception from an awaited call);
+- explains why in two or three sentences (the code after the `await` runs
+  inside the faulted method's catch block);
+- links to #2753;
+- gives two workarounds, each with an output row above: add
+  `await Task.Yield()` after the `catch` and before the activity ends
+  (`yield` row), or turn off `SetErrorStatusOnException` and set the status
+  yourself as in Option 1 (`option1` row). It will also say that setting the
+  status to `Ok`, with either call, does not help (`ok-in-catch` and
+  `ok-both-in-catch` rows), because BenHewins reported in the thread that
+  setting both worked for them.
+
+What I will not change: `ExceptionProcessor` and its tests, any public API,
+the example `Program.cs`, and `src/OpenTelemetry/CHANGELOG.md`
+(CONTRIBUTING.md asks for a CHANGELOG entry for behaviour changes, and this
+PR changes none). My claim offered maintainers this docs fix as the
+alternative to a code change. If they later want a code change, that will be
+a separate PR.
 
 **Implementation Plan**
 
-1. [Modify file X to do Y]
-2. [Add or change Z]
-3. [Update tests]
+1. Create branch `docs/2753-async-error-status-note` from upstream `main`
+   (`025ead795`).
+2. In `docs/trace/reporting-exceptions/README.md`, after the "platform
+   dependent" note in Option 2, add a subsection "Caught exceptions in async
+   code" with a short example, the cause, a link to #2753 and the two
+   workarounds. ASCII only, lines under 80 characters, as markdownlint and
+   the sanity check require.
+3. Re-run the probe above against the finished note, one line per claim it
+   makes: the note's example without a workaround gives `Error` (before); the
+   same code with `await Task.Yield()` after the catch gives `Unset` (after);
+   `ActivityStatusCode.Ok` gives `Error`; an uncaught async exception still
+   gives `Error`. Then compile the note's code samples in a scratch project
+   so they are not just text.
+4. Run the manifest checks (markdownlint, Release build,
+   `OpenTelemetry.Tests` on net11.0, `dotnet format whitespace`), plus
+   `git diff --check` and a non-ASCII check on my changed lines in place of the
+   sanity check.
+5. No new unit test. Nothing in the code changes, and the failing test on my
+   repro branch would either fail (asserting `Unset`) or lock the bug in
+   (asserting `Error`), so it stays on that branch as evidence.
 
-[Record deviations here as they happen: what changed mid-build and
-why. A recorded deviation is honest work; silent drift is not.]
+Deviation (2026-11-06): in my claim and my unit 6 notes, the first option was
+a code change to `ExceptionProcessor`, with docs as the fallback. The probe in
+Analysis showed a code change cannot tell the two cases apart, so I switched
+to the docs fix before writing any code.
+
+Deviation (2026-11-06, after the first plan-check): my first plan listed
+"set `ActivityStatusCode.Ok`" as a verified workaround. plan-check asked for
+the output, and re-running each case in a fresh process showed `Ok` is
+overwritten by `Error`. My first run had looped all cases in one process,
+where later cases did not resume inline. I replaced it with
+`await Task.Yield()` and added the output to Analysis.
+
+Deviation (2026-11-07, after the second plan-check): my note said "use
+Option 1 for this code path", but the feature applies to the whole provider,
+so the workaround is to turn the feature off. The plan also said two people
+in the thread tried `Ok`; only BenHewins did, with both calls, and said it
+worked. I ran both calls in fresh processes (still `Error`) and Option 1 with
+the feature off (`Unset`), added both rows above, and fixed the note in a
+second commit (3679b012e).
+
+Risk: maintainers may not want docs to close the issue (it carries the
+`keep-open` label), so the PR will reference #2753 and leave closing it to
+them.
 
 **Toolkit**
 
-- Tool:
-- What it produced:
-- Difficulties:
-- What changed:
+- Tool: plan-check (my unit 3 skill with the unit 6 wild scope), run headless
+  from my clone on `plan.md` and `plan-comment.md`. The first run could not
+  read its own skill files from a non-interactive session, so I re-ran it
+  with `--add-dir` for the skills folder and read-only tools.
+- What it produced: **reject** on the first real run. `honest-claims` failed
+  because I called two workarounds "verified" with no output in the plan, and
+  `fixes-the-cause` failed because a docs-only change leaves the cause in
+  place. It also flagged that `ExceptionProcessor.OnEnd` sets `Error` without
+  checking the current status, so the `Ok` workaround might not hold, and it
+  pointed out the issue's `keep-open` label (so "Refs", not "Fixes").
+- Difficulties: the `Ok` warning was right. When I re-ran each case in a fresh
+  process, `Ok` was overwritten by `Error`; my first probe had looped every
+  case in one process and only the first resumed inline. `fixes-the-cause`
+  has no path for a cause that sits in the .NET runtime, where the honest fix
+  is documentation.
+- What changed: I pasted the probe output into Analysis, dropped the `Ok`
+  workaround for `await Task.Yield()`, rewrote the comment to show values and
+  name a fallback, and patched `fixes-the-cause` with a narrow
+  documented-limitation path (evidence that the cause is outside the
+  project's code, an argument for why a code change cannot separate the
+  cases, and only workarounds whose output is shown). The second run, with
+  the patched rubric, was still **reject**: my "Option 1 for this code path"
+  workaround had no output (and cannot work while the provider-wide feature
+  is on), and I had misquoted the thread on who tried `Ok`. After I ran both
+  cases in fresh processes and fixed the plan, comment and docs note, the
+  third run was **accept** on all 7 required checks, with one wording note
+  that I took (limit "confirmed" to the inline case on x64 Windows).
 
 ---
 
 ## Testing Strategy
 
-[What observable checks prove the fix: your reproduction steps re-run
-against the built change (before and after), and the repo's own test
-suite or checks with the outcome shown. "Tests pass" with nothing
-observable named is not a strategy.]
+The change is documentation, so "the fix works" means every claim the note
+makes is true when run, and the repo's checks still pass.
+
+1. **Before:** my reproduction on OpenTelemetry 1.20.1 / `net9.0` (OutsideBar
+   ends `Error` in the async run and `Unset` in the sync run), and my
+   regression test on `main` / `net11.0` (`Expected: Unset, Actual: Error`).
+   At this point Option 2 in the doc said nothing about async code.
+2. **After:** I compiled the note's code sample exactly as written in a
+   scratch project against 1.20.1 and ran it plus each workaround the note
+   names, one fresh process per case, three rounds. Every round gave
+   `note-example Error`, `yield Unset`, `ok-in-catch Error`,
+   `ok-both-in-catch Error` and `option1 Unset` (feature off), which is what
+   the note says. A control with an async exception that
+   leaves the `using` block still gave `Error`, so the `Task.Yield`
+   workaround does not hide real failures.
+3. **Repo checks** from my ship manifest, on the branch: markdownlint over the
+   repo (exit 0), Release build of `OpenTelemetry.Tests` (0 warnings, 0
+   errors), `OpenTelemetry.Tests` on net11.0 (2006 total, 2001 passed, 5
+   skipped, 0 failed), and `dotnet format whitespace --verify-no-changes`
+   (exit 0). The repo's sanity check fails on unchanged `main` here because of
+   CRLF checkouts (`core.autocrlf=true`), so I covered my lines with
+   `git diff --check` and a byte scan: 0 non-ASCII added lines, longest line
+   79 characters.
+
+Not tested: x86, Linux, macOS, `net472`. The note says the code "often" runs
+inline, not always, because inlining depends on how the task completes.
 
 **Toolkit**
 
-- Tool:
-- What it produced:
-- Difficulties:
-- What changed:
+- Tool: Claude Code wrote three throwaway probe projects in my scratchpad
+  (pointer and stack probe, workaround probe, and the note's sample compiled
+  verbatim), and ran the manifest checks through `cmd`, the shell the
+  ship-gate uses on Windows.
+- What it produced: the before/after tables and the check output in
+  `test_evidence.md`, which pr-precheck later matched line for line against
+  the PR description.
+- Difficulties: running every case in one process gave a false "Ok works"
+  result, because only the first case resumed inline. The repo's sanity
+  check could not run cleanly on a Windows CRLF checkout.
+- What changed: one fresh process per case, repeated three times; a byte scan
+  and `git diff --check` stand in for the sanity check, and the PR says so.
 
 ---
 
 ## Implementation Notes
 
-[A running log, added to as you work. Date each entry. What you
-built, decisions you made when you made them, wrong turns included.]
+**2026-11-06 (evening): setup**
 
-**[Date]**
+Installed the ship-gate and wrote the ship manifest. I tested each check in
+`cmd` on unchanged `main` first: the Release build (1m25s), `OpenTelemetry.Tests`
+on net11.0 (2001 passed), `dotnet format whitespace` and markdownlint all
+passed. markdownlint failed only on my local `CLAUDE.local.md`, so I pointed
+its `--ignore-path` at `.git/info/exclude`, which already lists every file I
+keep out of commits. The sanity check failed on 1,493 files for CRLF line
+endings, so it went into the excluded table with the date and reason.
 
-[Entry]
+**2026-11-06: the cause, and a change of plan**
 
-**[Date]**
+Before planning, I tested my unit 6 explanation with a probe. The pointer
+after the caller's catch was a different value from the one inside it, and
+the stack showed the caller running inside `ThrowAsync`'s generated catch.
+So the exception is live, not left over. A code change in
+`ExceptionProcessor` cannot tell that apart from a real exception leaving the
+`using` block, and the one idea I tried (an `AsyncLocal` resume baseline)
+does not fire on the inline resume. I chose the docs fix my claim had
+offered as the alternative. I did not write any code for the code-fix
+route.
 
-[Entry]
+**2026-11-06: wrong turn on the workaround**
+
+My first workaround probe said `SetStatus(ActivityStatusCode.Ok)` worked.
+plan-check doubted it, and when I re-ran each case in its own process, it did
+not: `Activity` lets a later `Error` replace `Ok`. The single-process run had
+been misleading. I swapped in `await Task.Yield()` and added a sentence to the
+note saying `Ok` does not help, since two people in the thread tried it.
+
+**2026-11-06: built and checked**
+
+Branch `docs/2753-async-error-status-note` from upstream `main` 025ead795,
+one commit (f7d6e0487), +41 lines in `docs/trace/reporting-exceptions/README.md`.
+I compiled the note's sample verbatim and ran every claim three times, ran
+the manifest checks, and the ship-gate passed by hand (four repo checks and
+nine pr-precheck checks). I kept the regression test on my repro branch: with
+no code change it would fail, and flipping it to expect `Error` would lock
+the bug in.
+
+**2026-11-07: second plan-check, second commit**
+
+After I patched `fixes-the-cause`, plan-check still rejected the plan, and it
+was right twice. My "Option 1 for this code path" workaround had no output,
+and it cannot work while the provider-wide feature is on. I had also written
+that two people tried `Ok`, but only BenHewins did, with both `Status.Ok` and
+`ActivityStatusCode.Ok`. I ran both in fresh processes (still `Error`) and
+Option 1 with the feature off (`Unset`), and fixed the note in commit
+3679b012e (+44 lines in total now).
 
 **Toolkit**
 
-- Tool:
-- What it produced:
-- Difficulties:
-- What changed:
+- Tool: Claude Code on a branch in my fork clone, guided by `plan.md`; my
+  voice guard (`check_voice.py --draft`) on the PR text; and the ship-gate by
+  hand.
+- What it produced: one docs commit, `test_evidence.md` and `pr_draft.md`;
+  the voice guard passed the draft on the first run.
+- Difficulties: on Windows the Claude Code session could not edit files
+  under `~/.claude` (the hook settings and my rubric), so I applied those
+  patches myself. The ship-gate printed PASS and then crashed with a cp1252
+  `UnicodeEncodeError` while printing its summary; the pass was already
+  logged.
+- What changed: I scoped every change to the one docs file in the plan, and
+  recorded both plan deviations in Solution Approach as they happened.
 
 ---
 
